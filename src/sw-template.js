@@ -20,6 +20,11 @@ self.addEventListener('install', (event) => {
        index.html — one that names assets this deploy already deleted — into the
        precache, where it would be served forever. */
     await cache.addAll(PRECACHE.map((p) => new Request(scoped(p), { cache: 'reload' })));
+    /* Take over without waiting for every tab to close. A worker that serves a
+       broken shell leaves a blank page, and a blank page can't render the
+       "update ready" prompt that would otherwise be the only way to replace it
+       — so a new worker has to be able to supersede a bad one unprompted. */
+    await self.skipWaiting();
   })());
 });
 

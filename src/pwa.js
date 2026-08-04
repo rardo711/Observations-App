@@ -39,7 +39,12 @@ export function initPWA({ onInstallable, onUpdateReady }) {
     try {
       // Relative to the document, so it picks up the /Observations-App/ subpath
       // on Pages and the root anywhere else.
-      const reg = await navigator.serviceWorker.register('./sw.js');
+      /* updateViaCache: 'none' keeps the worker script itself out of the HTTP
+         cache. By default the browser is allowed to reuse a cached sw.js, and
+         Pages sends max-age=600 on everything — so a fix to the worker would
+         go unnoticed for ten minutes, which is ten minutes of a broken worker
+         staying in charge. */
+      const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
 
       // A worker already parked in `waiting` means an update landed on a
       // previous visit that was never applied.
@@ -66,17 +71,11 @@ export function initPWA({ onInstallable, onUpdateReady }) {
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });
 
-  /* On a first visit the worker calls clients.claim(), which fires
-     controllerchange even though nothing was replaced. Reloading on that would
-     flash the app for every new visitor, so only a change that supersedes an
-     existing controller counts as a real update. */
-  const hadController = !!navigator.serviceWorker.controller;
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloading) return;
-    reloading = true;
-    window.location.reload();
-  });
+  /* Deliberately no reload on controllerchange. The worker now activates as
+     soon as it installs, so reloading here would yank the page out from under
+     someone half way through writing up an observation. The new worker is
+     already in charge; the toast lets the user take the reload when it suits
+     them, and the next launch picks it up regardless. */
 }
 
 export async function promptInstall() {
@@ -88,7 +87,9 @@ export async function promptInstall() {
 }
 
 export function applyUpdate(reg) {
-  // controllerchange (above) reloads the page once the new worker takes over.
+  // The worker skips waiting on install, so by now it is usually already
+  // active and a plain reload is enough. The postMessage covers a browser
+  // that still parked it in `waiting`.
   if (reg?.waiting) reg.waiting.postMessage('skip-waiting');
-  else window.location.reload();
+  window.location.reload();
 }
