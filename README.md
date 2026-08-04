@@ -3,7 +3,18 @@
 A phone-sized coaching tool for retail floor leads: track who you've observed, what
 you saw against a behavior library, the commitment they made, and whether it stuck.
 
-## Run it
+## Use it
+
+**https://rardo711.github.io/Observations-App/**
+
+Open that on your phone and add it to your home screen — it's sized for a phone and
+works offline once loaded, since nothing talks to a server.
+
+⚠️ **Your data lives in that one browser.** There's no account and no sync. Notes
+taken on your phone won't appear on your laptop, and clearing your browser's site
+data for github.io erases them. Use one device for this.
+
+## Run it locally
 
 ```bash
 npm install
@@ -12,6 +23,20 @@ npm run build    # static output in dist/
 ```
 
 `dist/` is plain static files — drop it on any static host.
+
+## Deploying
+
+`.github/workflows/deploy.yml` builds and publishes to GitHub Pages on every push to
+the default branch (`claude/ram-coaching-app-93v9i0`), and can be run by hand from the
+Actions tab. If you ever rename or change the default branch, update the `branches:`
+list in that file to match or deploys will stop firing.
+
+The workflow sets the Pages source itself via `configure-pages` with `enablement:
+true`. If a run ever fails on that step, set **Settings → Pages → Source** to
+**GitHub Actions** once by hand and re-run it.
+
+`vite.config.js` uses `base: './'` so the bundle works from the `/Observations-App/`
+subpath Pages serves it under, and from any other host, without hardcoding a URL.
 
 ## How it's structured
 
