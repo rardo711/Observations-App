@@ -13,9 +13,14 @@ const scoped = (path) => new URL(path, self.registration.scope).toString();
 const SHELL = () => scoped('index.html');
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE.map(scoped)))
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    /* cache: 'reload' forces these past the HTTP cache. GitHub Pages serves
+       everything with max-age=600, so a plain addAll can bake a ten-minute-old
+       index.html — one that names assets this deploy already deleted — into the
+       precache, where it would be served forever. */
+    await cache.addAll(PRECACHE.map((p) => new Request(scoped(p), { cache: 'reload' })));
+  })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -41,15 +46,23 @@ self.addEventListener('fetch', (event) => {
   try { url = new URL(req.url); } catch { return; }
   if (url.origin !== self.location.origin) return;
 
-  // Every in-scope navigation renders the cached shell, which is what makes
-  // the app open instantly and work with no connection at all.
+  /* Navigations go to the network first, revalidating rather than trusting the
+     ten-minute HTTP cache, and fall back to the cached shell when there's no
+     connection. Serving the cached shell first would be faster, but it would
+     also mean a shell that ever went stale keeps rendering a blank page with no
+     way to notice — correctness wins over the few hundred ms. */
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
-      const cached = await caches.match(SHELL());
-      if (cached) return cached;
       try {
-        return await fetch(req);
+        const fresh = await fetch(new Request(req, { cache: 'no-cache' }));
+        if (fresh.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(SHELL(), fresh.clone());
+        }
+        return fresh;
       } catch {
+        const cached = await caches.match(SHELL());
+        if (cached) return cached;
         return new Response('This app is offline and has not been cached yet.', {
           status: 503,
           headers: { 'Content-Type': 'text/plain' },

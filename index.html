@@ -27,6 +27,74 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      Inline on purpose: if the bundle itself fails to load, nothing from the
+      bundle can report it. Without this a failed boot is an unexplained white
+      screen with no way out, which is exactly what a stale cached index.html
+      pointing at deleted assets produces.
+    -->
+    <script>
+      (function () {
+        var broken = [];
+        addEventListener(
+          'error',
+          function (e) {
+            var el = e.target;
+            if (el && (el.tagName === 'SCRIPT' || el.tagName === 'LINK')) {
+              broken.push((el.src || el.href || '').split('/').pop());
+            }
+          },
+          true
+        );
+
+        function recover() {
+          var done = function () {
+            // A plain reload can be answered from the same stale HTTP cache
+            // that caused this, so bust it with a one-off query string.
+            location.replace(location.pathname + '?reset=' + Date.now());
+          };
+          var jobs = [];
+          if (navigator.serviceWorker) {
+            jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.unregister(); }));
+              })
+            );
+          }
+          if (window.caches) {
+            jobs.push(
+              caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              })
+            );
+          }
+          Promise.all(jobs).then(done, done);
+        }
+
+        function check() {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          root.innerHTML =
+            '<div style="font:16px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#16181D;padding:24px;max-width:32rem;margin:0 auto">' +
+            '<h1 style="font-size:20px;margin:0 0 8px">This didn\'t load</h1>' +
+            '<p style="color:#6B7076;margin:0 0 16px">The app files didn\'t arrive. This is almost always a stale cache — resetting it below will fix it. Your saved observations are stored separately and are not affected.</p>' +
+            (broken.length
+              ? '<p style="color:#6B7076;font-size:13px;margin:0 0 16px">Failed to load: ' +
+                broken.join(', ') +
+                '</p>'
+              : '') +
+            '<button id="obs-reset" style="appearance:none;border:0;background:#E20074;color:#fff;font:600 16px/1 inherit;padding:14px 20px;border-radius:12px;width:100%">Reset and reload</button>' +
+            '</div>';
+          document.getElementById('obs-reset').addEventListener('click', recover);
+        }
+
+        // Module scripts run before load; 4s is well past a normal mount and
+        // short enough that nobody sits looking at nothing.
+        addEventListener('load', function () { setTimeout(check, 4000); });
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
