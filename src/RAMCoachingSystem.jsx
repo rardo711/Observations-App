@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, Plus, X, Users, ClipboardList, Sliders, Trash2, CircleAlert, ArrowRight, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Plus, X, Users, ClipboardList, Sliders, Trash2, CircleAlert, ArrowRight, RotateCcw, Pencil } from 'lucide-react';
 
 const C = {
   ink: '#16181D',
@@ -97,6 +97,7 @@ export default function RAMCoachingSystem() {
   const [data, setData] = useState(null);
   const [view, setView] = useState('team');
   const [personId, setPersonId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const [notice, setNotice] = useState(null);
 
   useEffect(() => {
@@ -134,6 +135,11 @@ export default function RAMCoachingSystem() {
   );
 
   const person = data.roster.find((p) => p.id === personId) || null;
+  /* Falls back to null if the observation was deleted out from under us. */
+  const editing = editingId ? data.observations.find((o) => o.id === editingId) || null : null;
+
+  const editObservation = (id) => { setEditingId(id); setView('capture'); };
+  const leaveCapture = () => { setEditingId(null); setView(editing ? 'person' : 'team'); };
 
   return (
     <div className="min-h-screen pb-20" style={{ background: C.paper, color: C.ink, fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif' }}>
@@ -146,8 +152,22 @@ export default function RAMCoachingSystem() {
       )}
 
       {view === 'team' && <TeamView data={data} persist={persist} open={(id) => { setPersonId(id); setView('person'); }} />}
-      {view === 'capture' && <CaptureView data={data} persist={persist} preselect={personId} done={() => setView('team')} />}
-      {view === 'person' && person && <PersonView data={data} persist={persist} person={person} back={() => setView('team')} observe={() => setView('capture')} />}
+      {view === 'capture' && (
+        /* Remount on target change so the form never carries another
+           observation's answers over. */
+        <CaptureView
+          key={editingId || 'new'}
+          data={data} persist={persist} preselect={personId} editing={editing}
+          done={leaveCapture} cancel={leaveCapture}
+        />
+      )}
+      {view === 'person' && person && (
+        <PersonView
+          data={data} persist={persist} person={person}
+          back={() => setView('team')} observe={() => { setEditingId(null); setView('capture'); }}
+          edit={editObservation}
+        />
+      )}
       {view === 'library' && <LibraryView data={data} persist={persist} />}
 
       <nav className="fixed bottom-0 left-0 right-0 flex" style={{ background: C.card, borderTop: `1px solid ${C.rule}` }}>
@@ -160,7 +180,7 @@ export default function RAMCoachingSystem() {
           return (
             <button
               key={k}
-              onClick={() => { if (k === 'capture') setPersonId(null); setView(k); }}
+              onClick={() => { if (k === 'capture') setPersonId(null); setEditingId(null); setView(k); }}
               aria-current={on ? 'page' : undefined}
               className="flex-1 py-3 flex flex-col items-center gap-1 text-xs"
               style={{ color: on ? C.accent : C.sub }}
@@ -281,20 +301,24 @@ function TeamView({ data, persist, open }) {
 
 /* ---------------- Capture ---------------- */
 
-function CaptureView({ data, persist, preselect, done }) {
-  const [pid, setPid] = useState(preselect || '');
-  const [marks, setMarks] = useState({});
-  const [sit, setSit] = useState('');
-  const [beh, setBeh] = useState('');
-  const [imp, setImp] = useState('');
-  const [commitment, setCommitment] = useState('');
-  const [recheck, setRecheck] = useState(() => addDays(data.cadenceDays));
+function CaptureView({ data, persist, preselect, editing, done, cancel }) {
+  const [pid, setPid] = useState(editing?.personId || preselect || '');
+  const [marks, setMarks] = useState(editing?.marks || {});
+  const [date, setDate] = useState(editing?.date || today());
+  const [sit, setSit] = useState(editing?.sit || '');
+  const [beh, setBeh] = useState(editing?.beh || '');
+  const [imp, setImp] = useState(editing?.imp || '');
+  const [commitment, setCommitment] = useState(editing?.commitment || '');
+  const [recheck, setRecheck] = useState(() => editing?.recheck || addDays(data.cadenceDays));
   const [saved, setSaved] = useState(false);
   const timer = useRef(null);
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const active = data.behaviors.filter((b) => b.on && !b.archived);
+  /* Anything currently marked stays visible even if it's since been switched
+     off or archived — otherwise editing would silently keep a score the
+     coach can't see or clear. */
+  const active = data.behaviors.filter((b) => (b.on && !b.archived) || marks[b.id]);
   const phases = [...new Set(active.map((b) => b.phase))];
 
   const cycle = (id) => setMarks((m) => {
@@ -313,14 +337,28 @@ function CaptureView({ data, persist, preselect, done }) {
     /* Focus follows library order, not tap order, so it's the same answer
        no matter which chip you tapped first. */
     const firstGap = active.find((b) => marks[b.id] === 'gap');
-    const rec = {
-      id: uid(), personId: pid, date: today(), marks, sit, beh, imp,
-      commitment: commitment.trim(),
-      recheck: commitment.trim() ? recheck : null,
+    const promise = commitment.trim();
+    const fields = {
+      personId: pid, date, marks, sit, beh, imp,
+      commitment: promise,
+      recheck: promise ? recheck : null,
       focus: firstGap ? firstGap.text : null,
-      resolved: false,
     };
-    const ok = await persist({ ...data, observations: [...data.observations, rec] });
+
+    let next;
+    if (editing) {
+      /* Rewriting the commitment makes it a different promise, so its
+         stuck/still-there verdict no longer applies. An untouched one keeps
+         whatever was already decided. */
+      const sameCommitment = promise === (editing.commitment || '');
+      const keep = Boolean(promise) && sameCommitment;
+      const updated = { ...editing, ...fields, resolved: keep ? editing.resolved : false, stuck: keep ? editing.stuck : undefined };
+      next = { ...data, observations: data.observations.map((o) => (o.id === editing.id ? updated : o)) };
+    } else {
+      next = { ...data, observations: [...data.observations, { id: uid(), ...fields, resolved: false }] };
+    }
+
+    const ok = await persist(next);
     if (!ok) return;
     setSaved(true);
     timer.current = setTimeout(done, 700);
@@ -328,13 +366,17 @@ function CaptureView({ data, persist, preselect, done }) {
 
   if (saved) return (
     <div className="min-h-screen flex items-center justify-center px-8 text-center">
-      <p className="text-lg font-medium">Observation saved.</p>
+      <p className="text-lg font-medium">{editing ? 'Changes saved.' : 'Observation saved.'}</p>
     </div>
   );
 
   return (
     <div>
-      <Header title="New observation" sub={fmt(today())} />
+      <Header
+        title={editing ? 'Edit observation' : 'New observation'}
+        sub={editing ? 'Correcting a note you already saved' : fmt(today())}
+        back={editing ? cancel : undefined}
+      />
 
       <div className="p-4 space-y-5">
         <div>
@@ -349,6 +391,16 @@ function CaptureView({ data, persist, preselect, done }) {
             {data.roster.length === 0 && <p className="text-sm" style={{ color: C.sub }}>Add teammates on the Team tab first.</p>}
           </div>
         </div>
+
+        {editing && (
+          <div>
+            <Eyebrow>When</Eyebrow>
+            <input id="obs-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)}
+              aria-label="Observation date"
+              className="px-3 py-2 rounded-lg text-sm outline-none"
+              style={{ background: C.card, border: `1px solid ${C.rule}` }} />
+          </div>
+        )}
 
         <div>
           <Eyebrow>What you saw</Eyebrow>
@@ -408,18 +460,26 @@ function CaptureView({ data, persist, preselect, done }) {
           {commitment.trim() && (
             <div className="mt-3 flex items-center gap-3">
               <label className="text-sm" style={{ color: C.sub }} htmlFor="recheck">Re-observe by</label>
-              <input id="recheck" type="date" value={recheck} min={today()} onChange={(e) => setRecheck(e.target.value)}
+              {/* An existing commitment's date may already be past; only a new one must be in the future. */}
+              <input id="recheck" type="date" value={recheck} min={editing ? undefined : today()} onChange={(e) => setRecheck(e.target.value)}
                 className="px-3 py-2 rounded-lg text-sm outline-none"
                 style={{ background: C.card, border: `1px solid ${C.rule}` }} />
             </div>
           )}
         </div>
 
-        <button onClick={save} disabled={!canSave}
-          className="w-full py-4 rounded-xl font-semibold text-white text-base"
-          style={{ background: canSave ? C.accent : C.faint }}>
-          Save observation
-        </button>
+        <div className="space-y-2">
+          <button onClick={save} disabled={!canSave}
+            className="w-full py-4 rounded-xl font-semibold text-white text-base"
+            style={{ background: canSave ? C.accent : C.faint }}>
+            {editing ? 'Save changes' : 'Save observation'}
+          </button>
+          {editing && (
+            <button onClick={cancel} className="w-full py-3 rounded-xl text-sm" style={{ color: C.sub }}>
+              Discard changes
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -427,8 +487,9 @@ function CaptureView({ data, persist, preselect, done }) {
 
 /* ---------------- Person ---------------- */
 
-function PersonView({ data, persist, person, back, observe }) {
+function PersonView({ data, persist, person, back, observe, edit }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const obs = useMemo(
     () => data.observations.filter((o) => o.personId === person.id).sort((a, b) => b.date.localeCompare(a.date)),
@@ -455,6 +516,11 @@ function PersonView({ data, persist, person, back, observe }) {
   const remove = () => {
     persist({ ...data, roster: data.roster.filter((p) => p.id !== person.id), observations: data.observations.filter((o) => o.personId !== person.id) });
     back();
+  };
+
+  const deleteObservation = (id) => {
+    persist({ ...data, observations: data.observations.filter((o) => o.id !== id) });
+    setPendingDelete(null);
   };
 
   const openCommit = obs.find((o) => o.commitment && !o.resolved);
@@ -540,6 +606,25 @@ function PersonView({ data, persist, person, back, observe }) {
                       {o.commitment}
                       {o.resolved && <span style={{ color: o.stuck ? C.strength : C.gap }}> — {o.stuck ? 'stuck' : 'still there'}</span>}
                     </p>
+                  )}
+
+                  {pendingDelete === o.id ? (
+                    <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${C.rule}` }}>
+                      <p className="text-sm leading-snug">Delete this observation? Its marks stop counting toward recurring gaps and strengths.</p>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => deleteObservation(o.id)} className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: C.overdue }}>Delete</button>
+                        <button onClick={() => setPendingDelete(null)} className="flex-1 py-2.5 rounded-lg text-sm" style={{ color: C.sub, border: `1px solid ${C.rule}` }}>Keep</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 pt-3 flex gap-4" style={{ borderTop: `1px solid ${C.rule}` }}>
+                      <button onClick={() => edit(o.id)} className="flex items-center gap-1.5 text-sm font-medium" aria-label={`Edit the observation from ${fmt(o.date)}`} style={{ color: C.accent }}>
+                        <Pencil size={14} /> Edit
+                      </button>
+                      <button onClick={() => setPendingDelete(o.id)} className="flex items-center gap-1.5 text-sm" aria-label={`Delete the observation from ${fmt(o.date)}`} style={{ color: C.sub }}>
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </div>
                   )}
                 </div>
               );

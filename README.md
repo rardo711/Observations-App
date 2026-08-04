@@ -63,3 +63,14 @@ Dates are local calendar days (`YYYY-MM-DD`), never UTC — an observation logge
   a banner says so, so the screen never shows state that isn't saved.
 - **Removing a teammate is gated behind an inline confirm** that names how many
   observations go with them.
+- **Editing an observation reuses the capture form** rather than a second form that
+  would drift out of sync. `CaptureView` takes an `editing` prop; it's remounted via
+  `key` so one observation's answers can never bleed into another's.
+- **Rewriting a commitment clears its stuck / still-there verdict**, because that
+  verdict was about the old wording. Leaving the commitment untouched while fixing a
+  typo elsewhere keeps the verdict.
+- **A behavior you already marked stays visible while editing** even if it's since
+  been switched off or archived — otherwise the edit would preserve a score you
+  can't see or clear.
+- You can correct an observation's **date** when editing (capped at today), for when
+  you log Monday's floor time on Tuesday.
