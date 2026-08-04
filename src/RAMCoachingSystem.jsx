@@ -142,7 +142,15 @@ export default function RAMCoachingSystem() {
   const leaveCapture = () => { setEditingId(null); setView(editing ? 'person' : 'team'); };
 
   return (
-    <div className="min-h-screen pb-20" style={{ background: C.paper, color: C.ink, fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif' }}>
+    <div
+      className="min-h-screen"
+      style={{
+        background: C.paper, color: C.ink,
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
+        /* Clears the fixed tab bar plus the home indicator underneath it. */
+        paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       {notice && (
         <div role="alert" className="px-4 py-3 text-sm flex items-start gap-2" style={{ background: '#FDEAEE', color: C.overdue }}>
           <CircleAlert size={16} className="mt-0.5 shrink-0" />
@@ -170,7 +178,15 @@ export default function RAMCoachingSystem() {
       )}
       {view === 'library' && <LibraryView data={data} persist={persist} />}
 
-      <nav className="fixed bottom-0 left-0 right-0 flex" style={{ background: C.card, borderTop: `1px solid ${C.rule}` }}>
+      <nav
+        className="fixed bottom-0 left-0 right-0 flex"
+        style={{
+          background: C.card,
+          borderTop: `1px solid ${C.rule}`,
+          /* Keeps the tabs off the home indicator when installed. */
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
+      >
         {[
           { k: 'team', label: 'Team', Icon: Users },
           { k: 'capture', label: 'Observe', Icon: ClipboardList },
@@ -197,7 +213,15 @@ export default function RAMCoachingSystem() {
 
 function Header({ title, sub, back, right }) {
   return (
-    <header className="px-4 pt-6 pb-4" style={{ background: C.card, borderBottom: `1px solid ${C.rule}` }}>
+    <header
+      className="px-4 pb-4"
+      style={{
+        background: C.card,
+        borderBottom: `1px solid ${C.rule}`,
+        /* Falls back to the original 1.5rem where there's no status bar to clear. */
+        paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
+      }}
+    >
       <div className="flex items-start gap-3">
         {back && <button onClick={back} className="mt-1 -ml-1" aria-label="Back" style={{ color: C.sub }}><ChevronLeft size={22} /></button>}
         <div className="flex-1 min-w-0">

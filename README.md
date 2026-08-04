@@ -7,8 +7,16 @@ you saw against a behavior library, the commitment they made, and whether it stu
 
 **https://rardo711.github.io/Observations-App/**
 
-Open that on your phone and add it to your home screen — it's sized for a phone and
-works offline once loaded, since nothing talks to a server.
+Open that on your phone and add it to your home screen:
+
+- **iPhone / iPad** — in Safari, tap **Share**, then **Add to Home Screen**. (It has
+  to be Safari; Chrome on iOS can't install web apps.) The app tells you this itself
+  if it detects iOS and isn't installed yet.
+- **Android** — tap **Install** on the banner, or Chrome's menu → **Install app**.
+
+Once installed it launches from its own icon with no browser chrome, and it works
+with no signal at all — everything is cached on the device and nothing talks to a
+server.
 
 ⚠️ **Your data lives in that one browser.** There's no account and no sync. Notes
 taken on your phone won't appear on your laptop, and clearing your browser's site
@@ -37,6 +45,31 @@ true`. If a run ever fails on that step, set **Settings → Pages → Source** t
 
 `vite.config.js` uses `base: './'` so the bundle works from the `/Observations-App/`
 subpath Pages serves it under, and from any other host, without hardcoding a URL.
+
+## The app-install side
+
+- `public/manifest.webmanifest` — name, icons, `display: standalone`. All paths are
+  relative so they resolve under the subpath.
+- `public/icons/` — generated PNGs. Maskable variants keep the glyph inside the
+  middle 80% so Android launchers don't crop it; the Apple icon is square and opaque
+  because iOS applies its own mask.
+- `src/sw-template.js` + the `serviceWorker()` plugin in `vite.config.js` — the
+  plugin writes `dist/sw.js` with the precache list read from what was actually
+  built, so a new hashed bundle can never ship next to a worker still listing the
+  old filenames. It hard-fails the build if a placeholder is left unsubstituted.
+- `src/pwa.js` — registration, the install prompt, and update detection.
+- `src/App.jsx` — the install banner and update toast. These live in a wrapper on
+  purpose: `RAMCoachingSystem.jsx` imports nothing local, so it stays paste-able
+  into an artifact where none of this exists.
+
+Two things that are easy to get wrong and are deliberately handled:
+
+- The worker calls `clients.claim()`, which fires `controllerchange` on a **first**
+  visit even though nothing was replaced. Reloading on that would flash the app for
+  every new visitor, so `pwa.js` only reloads when a controller was already present.
+- Registration falls back to running immediately when `document.readyState` is
+  already `complete`, because waiting on the `load` event alone silently never fires
+  on a warm cache.
 
 ## How it's structured
 

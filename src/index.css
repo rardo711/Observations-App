@@ -9,4 +9,38 @@ body,
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  /* Installed apps shouldn't rubber-band or pull-to-refresh — that reads as
+     a web page, not an app. */
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Removes the 300ms double-tap delay and stops long-press from selecting
+   the label text on the behavior chips. */
+button {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* iOS zooms the whole page when you focus a control smaller than 16px and
+   never fully zooms back out. Scoped to WebKit so other platforms keep the
+   intended type scale. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
